@@ -2,16 +2,25 @@
 Netflix配信終了予定の情報を取得する
 """
 import time
-import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.webdriver import WebDriver
 from webdriver_manager.chrome import ChromeDriverManager
+from pymongo import MongoClient
 
 SLEEP_TIME = 2
-CSV_NAME = 'output/netflix_end.csv'
+COLLECTION_NAME = 'netflix_end'
 
 
-def main():
+def main() -> None:
+    """
+    クローラーのメイン処理
+    """
+    client = MongoClient('localhost', 27017)
+    if COLLECTION_NAME in client.scraping.list_collection_names():
+        client.scraping[COLLECTION_NAME].drop()
+    collection = client.scraping[COLLECTION_NAME]
+
     try:
         driver = webdriver.Chrome(ChromeDriverManager().install())
         target_url = 'https://www.net-frx.com/p/netflix-expiring.html'
@@ -25,14 +34,23 @@ def main():
         month2_elements = driver.find_elements(By.CSS_SELECTOR, '.data-fd2 > div')
         result.extend(get_info(month2_elements))
 
-        pd.DataFrame(result).to_csv(CSV_NAME, index=False)
-        print(pd.DataFrame(result))
+        collection.insert_many(result)
+        print(result)
 
     finally:
         driver.quit()
 
 
-def get_info(day_elements):
+def get_info(day_elements: WebDriver) -> list[dict]:
+    """
+    作品情報のリストを返す
+
+    Args:
+        day_elements (WebDriver):
+
+    Returns:
+        list[dict]: 辞書型の作品情報のリスト
+    """
     result = list()
 
     for i_day in day_elements:

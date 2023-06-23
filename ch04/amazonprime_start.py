@@ -7,12 +7,21 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.webdriver import WebDriver
 from webdriver_manager.chrome import ChromeDriverManager
+from pymongo import MongoClient
 
 SLEEP_TIME = 5
-CSV_NAME = 'output/amazonprime_start.csv'
+COLLECTION_NAME = 'amazonprime_start'
 
 
 def main() -> None:
+    """
+    クローラーのメイン処理
+    """
+    client = MongoClient('localhost', 27017)
+    if COLLECTION_NAME in client.scraping.list_collection_names():
+        client.scraping[COLLECTION_NAME].drop()
+    collection = client.scraping[COLLECTION_NAME]
+
     try:
         driver = webdriver.Chrome(ChromeDriverManager().install())
         target_url = 'https://animephilia.net/amazon-prime-video-arrival-calendar/'
@@ -25,25 +34,49 @@ def main() -> None:
             calender_update(driver)
             time.sleep(SLEEP_TIME)
 
-        pd.DataFrame(results).to_csv(CSV_NAME, index=False)
-        print(pd.DataFrame(results))
+        collection.insert_many(results)
+        print(results)
+
 
     finally:
         driver.quit()
 
 
 def scroll_to_see_element(driver: WebDriver, by: str, value: str) -> None:
+    """
+    要素が見える位置まで画面をスクロールする。
+
+    Args:
+        driver (WebDriver):
+        by (str): By.CLASS_NAMEなど
+        value (str): 値
+    """
     element = driver.find_element(by, value)
     driver.execute_script("arguments[0].scrollIntoView();", element)
 
 
 def calender_update(driver: WebDriver) -> None:
+    """
+    翌週のカレンダーを表示する。
+
+    Args:
+        driver (WebDriver):
+    """
     # driver.execute_script('window.scrollBy(0, 600);')
     scroll_to_see_element(driver, By.CLASS_NAME, 'next')
     driver.find_element(By.CLASS_NAME, 'next').click()
 
 
-def get_info(driver: WebDriver) -> list:
+def get_info(driver: WebDriver) -> list[dict]:
+    """
+    作品情報のリストを返す。
+
+    Args:
+        driver (WebDriver):
+
+    Returns:
+        list[dict]: 辞書型の作品情報のリスト
+    """
     results = list()
     day_elements = driver.find_elements(By.CLASS_NAME, 'day-column')
 

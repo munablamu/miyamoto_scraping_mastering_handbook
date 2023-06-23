@@ -2,25 +2,30 @@
 Githubトレンドのデータを取得する
 """
 import time
-import requests
-import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome import service as fs
 from webdriver_manager.chrome import ChromeDriverManager
+from pymongo import MongoClient
 
 SLEEP_TIME = 3
-CSV_NAME = 'output/github_ranking.csv'
+COLLECTION_NAME = 'github_ranking'
 
 
-def main():
+def main() -> None:
+    """
+    クローラーのメイン処理
+    """
+    client = MongoClient('localhost', 27017)
+    if COLLECTION_NAME in client.scraping.list_collection_names():
+        client.scraping[COLLECTION_NAME].drop()
+    collection = client.scraping[COLLECTION_NAME]
+
     try:
         driver = webdriver.Chrome(ChromeDriverManager().install())
         url = 'https://github.com/trending'
         driver.get(url)
         time.sleep(SLEEP_TIME)
 
-        result = list()
         box_row_elements = driver.find_elements(By.CLASS_NAME, 'Box-row')
         for i_box in box_row_elements:
             row_data = dict()
@@ -31,11 +36,9 @@ def main():
             row_data['total_star'] = i_box.find_elements(By.CSS_SELECTOR, '.Link--muted.d-inline-block.mr-3')[0].text
             row_data['fork'] = i_box.find_elements(By.CSS_SELECTOR, '.Link--muted.d-inline-block.mr-3')[1].text
             row_data['todays_star'] = i_box.find_element(By.CSS_SELECTOR, '.d-inline-block.float-sm-right').text.replace('stars today', '')
-            result.append(row_data)
+            collection.insert_one(row_data)
 
-        print(result)
-
-        pd.DataFrame(result).to_csv(CSV_NAME, index=False)
+            print(row_data)
 
     finally:
         driver.quit()

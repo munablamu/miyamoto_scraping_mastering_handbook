@@ -5,13 +5,23 @@ import time
 import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdrover.chrome.webdriber import WebDriver
 from webdriver_manager.chrome import ChromeDriverManager
+from pymongo import MongoClient
 
 SLEEP_TIME = 10
-CSV_NAME = 'output/netflix_start.csv'
+COLLECTION_NAME = 'netflix_start'
 
 
-def main():
+def main() -> None:
+    """
+    クローラーのメイン処理
+    """
+    client = MongoClient('localhost', 27017)
+    if COLLECTION_NAME in client.scraping.list_collection_names():
+        client.scraping[COLLECTION_NAME].drop()
+    collection = client.scraping[COLLECTION_NAME]
+
     try:
         driver = webdriver.Chrome(ChromeDriverManager().install())
         target_url = 'https://www.net-frx.com/p/netflix-coming-soon.html'
@@ -19,15 +29,24 @@ def main():
         driver.get(target_url)
         time.sleep(SLEEP_TIME)
 
-        result = get_info(driver=driver)
+        result = get_info(driver)
 
-        pd.DataFrame(result).to_csv(CSV_NAME, index=False)
+        collection.insert_many(result)
 
     finally:
         driver.quit()
 
 
-def get_info(driver):
+def get_info(driver: WebDriver) -> list[dict]:
+    """
+    作品情報のリストを返す
+
+    Args:
+        driver (WebDriver):
+
+    Returns:
+        list[dict]: 辞書型の作品情報のリスト
+    """
     results = list()
     day_elements = driver.find_elements(By.CLASS_NAME, 'date-cc')
     for i_day in day_elements:

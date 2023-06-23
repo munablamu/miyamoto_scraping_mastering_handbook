@@ -5,7 +5,6 @@ TODO: 取得開始できたりできなかったりする（原因不明）
 import os
 import time
 import datetime
-import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager

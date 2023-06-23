@@ -6,14 +6,23 @@ import time
 import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.webdriver import WebDriver
 from webdriver_manager.chrome import ChromeDriverManager
+from pymongo import MongoClient
 
 SLEEP_TIME = 10
 FILE_DIR = 'output'
-CSV_NAME = 'output/livedoor.csv'
+COLLECTION_NAME = 'livedoor'
 
 
-def main():
+def main() -> None:
+    """
+    クローラーのメイン処理
+    """
+    client = MongoClient('localhost', 27017)
+    collection = client.scraping[COLLECTION_NAME]
+    collection.create_index('key', unique=True)
+
     try:
         driver = webdriver.Chrome(ChromeDriverManager().install())
         if not os.path.exists(FILE_DIR):
@@ -33,25 +42,38 @@ def main():
 
         results = list()
         for i_url in article_urls:
-            print(i_url)
-            driver.get(i_url)
-            time.sleep(SLEEP_TIME)
-            results.append(get_data(driver))
+            key = extract_key(i_url)
 
-        pd.DataFrame(results).to_csv(CSV_NAME, index=False)
+            item_info = collection.find_one({'key': key})
+            if not item_info:
+                print(i_url)
+                driver.get(i_url)
+                time.sleep(SLEEP_TIME)
+                item_info = get_data(driver, key)
+                collection.insert_one(item_info)
 
     finally:
         driver.quit()
 
 
-def get_data(driver):
+def get_data(driver: WebDriver, key: str) -> dict:
+    """
+    詳細ページから記事の情報を取得する。
+
+    Args:
+        driver (WebDriver):
+        key (str): キー
+
+    Returns:
+        dict: 記事の詳細
+    """
     result = dict()
     result['url'] = driver.current_url
-    result['id'] = driver.current_url.split('/')[-2]
+    result['key'] = key
     result['title'] = driver.find_element(By.CLASS_NAME, 'articleTtl').text
     result['date'] = driver.find_element(By.CLASS_NAME, 'articleDate').text
     result['vender'] = driver.find_element(By.CLASS_NAME, 'articleVender').text
-    result['file_name'] = f'livedoor_{result["id"]}.txt'
+    result['file_name'] = f'livedoor_{result["key"]}.txt'
 
     article_text = str()
     while True:
@@ -76,9 +98,31 @@ def get_data(driver):
     return result
 
 
-def get_news_url(driver):
+def get_news_url(driver: WebDriver) -> list:
+    """
+    一覧ページからURLを取得する
+
+    Args:
+        driver (WebDriver):
+
+    Returns:
+        list: 詳細ページのURL
+    """
     a_elements = driver.find_elements(By.CLASS_NAME, 'rewrite_ab')
     return [i.get_attribute('href') for i in a_elements]
+
+
+def extract_key(url: str) -> str:
+    """
+    URLからキーを抜き出す。
+
+    Args:
+        url (str): 対象URL
+
+    Returns:
+        str: キー
+    """
+    return url.split('/')[-2]
 
 
 if __name__ == '__main__':

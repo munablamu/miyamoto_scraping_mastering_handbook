@@ -4,10 +4,10 @@
 import re
 import time
 import math
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.webdriver import WebDriver
-from webdriver_manager.chrome import ChromeDriverManager
+import requests
+from requests.sessions import Session
+from requests.models import Response
+from bs4 import BeautifulSoup
 from pymongo import MongoClient
 
 SLEEP_TIME = 4
@@ -22,19 +22,18 @@ def main() -> None:
     collection = client.scraping[COLLECTION_NAME]
     collection.create_index('key', unique=True)
 
-    try:
-        driver = webdriver.Chrome(ChromeDriverManager().install())
+    with requests.Session() as session:
         base_url = 'https://tabelog.com/tokyo/rstLst/?vs=1&sa=%E6%9D%B1%E4%BA%AC%E9%83%BD&sk=%25E5%2588%2580%25E5%2589%258A%25E9%25BA%25BA&lid=top_navi1&vac_net=&svd=20220822&svt=1900&svps=2&hfc=1&Cat=RC&LstCat=RC03&LstCatD=RC0304&LstCatSD=RC030402&cat_sk=%E5%88%80%E5%89%8A%E9%BA%BA'
-        driver.get(base_url)
+        response = session.get(base_url)
         time.sleep(SLEEP_TIME)
 
-        page_num = get_pagenum(driver)
+        page_num = get_pagenum(response)
 
         store_urls = list()
-        for i in range(page_num-1):
-            urls = get_store_url(driver)
+        for _ in range(page_num-1):
+            urls = get_store_url(response)
             store_urls.extend(urls)
-            get_next(driver)
+            response = get_next(session, response)
             time.sleep(SLEEP_TIME)
 
         store_urls = store_urls[:5] # データ量を減らす
@@ -43,16 +42,13 @@ def main() -> None:
 
             store_info = collection.find_one({'key': key})
             if not store_info:
-                store_info = get_store_info(driver, i_url, key)
+                store_info = get_store_info(session, i_url, key)
                 collection.insert_one(store_info)
 
             print(store_info)
 
-    finally:
-        driver.quit()
 
-
-def get_next(driver: WebDriver) -> None:
+def get_next(session: Session, response: Response) -> Response:
     """
     次の一覧ページを表示する。
     直後にtime.sleep()が必要。
@@ -60,11 +56,13 @@ def get_next(driver: WebDriver) -> None:
     Args:
         driver (WebDriver): _description_
     """
-    pagenation_element = driver.find_elements(By.CLASS_NAME, 'c-pagination__item')[-1]
-    pagenation_element.find_element(By.TAG_NAME, 'a').click()
+    soup = BeautifulSoup(response.text, 'html.parser')
+    pagenation_element = soup.find_all(class_='c-pagination__item')[-1]
+    next_url = pagenation_element.find('a').get('href')
+    return session.get(next_url)
 
 
-def get_pagenum(driver: WebDriver) -> int:
+def get_pagenum(response: Response) -> int:
     """
     一覧ページのページ数をカウントする。
 
@@ -74,13 +72,14 @@ def get_pagenum(driver: WebDriver) -> int:
     Returns:
         int:
     """
-    count_elements = driver.find_elements(By.CLASS_NAME, 'c-page-count__num')
+    soup = BeautifulSoup(response.text, 'html.parser')
+    count_elements = soup.find_all(class_='c-page-count__num')
     paging_num = int(count_elements[1].text)
     total_num = int(count_elements[2].text)
     return math.ceil(total_num / paging_num)
 
 
-def get_store_url(driver: WebDriver) -> list:
+def get_store_url(response: Response) -> list:
     """
     一覧ページからURLのリストを得る。
 
@@ -90,13 +89,14 @@ def get_store_url(driver: WebDriver) -> list:
     Returns:
         list: 詳細ページURLのリスト
     """
-    store_elements = driver.find_elements(By.CSS_SELECTOR, '.list-rst__wrap.js-open-new-window')
-    store_elements = [i.find_element(By.TAG_NAME, 'h3') for i in store_elements]
-    store_elements = [i.find_element(By.TAG_NAME, 'a') for i in store_elements]
-    return [i.get_attribute('href') for i in store_elements]
+    soup = BeautifulSoup(response.text, 'html.parser')
+    store_elements = soup.select('.list-rst__wrap.js-open-new-window')
+    store_elements = [i.find('h3') for i in store_elements]
+    store_elements = [i.find('a') for i in store_elements]
+    return [i.get('href') for i in store_elements]
 
 
-def get_store_info(driver: WebDriver, url: str, key: str) -> dict:
+def get_store_info(session: Session, url: str, key: str) -> dict:
     """
     詳細ページから店の情報を取得する。
 
@@ -109,12 +109,13 @@ def get_store_info(driver: WebDriver, url: str, key: str) -> dict:
         dict: 店の情報
     """
     map_url = url + 'dtlmap/'
-    driver.get(map_url)
+    response = session.get(map_url)
     time.sleep(SLEEP_TIME)
-    table_element = driver.find_element(By.CSS_SELECTOR, '.c-table.c-table--form.rstinfo-table__table')
-    th_texts = [i.text for i in table_element.find_elements(By.TAG_NAME, 'th')]
-    td_texts = [i.text for i in table_element.find_elements(By.TAG_NAME, 'td')]
-    result = {key: value for key, value in zip(th_texts, td_texts)}
+    soup = BeautifulSoup(response.text, 'html.parser')
+    table_element = soup.select_one('.c-table.c-table--form.rstinfo-table__table')
+    th_texts = [i.text for i in table_element.find_all('th')]
+    td_texts = [i.text for i in table_element.find_all('td')]
+    result = {normalize_spaces(key): normalize_spaces(value) for key, value in zip(th_texts, td_texts)}
     result['key'] = key
     return result
 
@@ -131,6 +132,19 @@ def extract_key(url: str) -> str:
     """
     m = re.search(r'/([^/]+)/$', url)
     return m.group(1)
+
+
+def normalize_spaces(s: str) -> str:
+    """
+    連即する空白を１つのスペースに置き換え、前後の空白を削除した新シ文字列を返す。
+
+    Args:
+        s (str): もとの文字列
+
+    Returns:
+        str: 加工後の文字列
+    """
+    return re.sub(r'\s+', ' ', s).strip()
 
 
 if __name__ == '__main__':

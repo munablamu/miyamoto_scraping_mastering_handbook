@@ -2,7 +2,6 @@
 Peatixイベントの情報を取得する
 """
 import time
-import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.webdriver import WebDriver

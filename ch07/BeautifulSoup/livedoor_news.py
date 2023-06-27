@@ -3,11 +3,12 @@
 """
 import os
 import time
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.webdriver import WebDriver
-from webdriver_manager.chrome import ChromeDriverManager
+import requests
+from requests.sessions import Session
+from requests.models import Response
+from bs4 import BeautifulSoup
 from pymongo import MongoClient
+from fake_useragent import UserAgent
 
 SLEEP_TIME = 10
 FILE_DIR = 'output'
@@ -22,40 +23,39 @@ def main() -> None:
     collection = client.scraping[COLLECTION_NAME]
     collection.create_index('key', unique=True)
 
-    try:
-        driver = webdriver.Chrome(ChromeDriverManager().install())
+    ua = UserAgent()
+    headers = {'User-Agent': str(ua.chrome)}
+
+    with requests.Session() as session:
         if not os.path.exists(FILE_DIR):
             os.makedirs(FILE_DIR)
 
         target_url = 'https://news.livedoor.com/'
-        driver.get(target_url)
+        response = session.get(target_url, headers=headers)
         time.sleep(SLEEP_TIME)
 
         article_urls = list()
 
-        urls = get_news_url(driver)
+        urls = get_news_url(response)
+
         # データ量を減らす
         urls = urls[:4]
         article_urls.extend(urls)
         article_urls = set([i.replace('topics', 'article') for i in article_urls])
 
-        results = list()
         for i_url in article_urls:
             key = extract_key(i_url)
 
             item_info = collection.find_one({'key': key})
             if not item_info:
                 print(i_url)
-                driver.get(i_url)
+                response = session.get(i_url, headers=headers)
                 time.sleep(SLEEP_TIME)
-                item_info = get_data(driver, key)
+                item_info = get_data(session, headers, response, key)
                 collection.insert_one(item_info)
 
-    finally:
-        driver.quit()
 
-
-def get_data(driver: WebDriver, key: str) -> dict:
+def get_data(session: Session, headers: dict, response: Response, key: str) -> dict:
     """
     詳細ページから記事の情報を取得する。
 
@@ -66,25 +66,29 @@ def get_data(driver: WebDriver, key: str) -> dict:
     Returns:
         dict: 記事の詳細
     """
+    soup = BeautifulSoup(response.text, 'html.parser')
+
     result = dict()
-    result['url'] = driver.current_url
+    result['url'] = response.url
     result['key'] = key
-    result['title'] = driver.find_element(By.CLASS_NAME, 'articleTtl').text
-    result['date'] = driver.find_element(By.CLASS_NAME, 'articleDate').text
-    result['vender'] = driver.find_element(By.CLASS_NAME, 'articleVender').text
+    result['title'] = soup.find(class_='articleTtl').text
+    result['date'] = soup.find(class_='articleDate').text
+    result['vender'] = soup.find(class_='articleVender').text
     result['file_name'] = f'livedoor_{result["key"]}.txt'
 
     article_text = str()
     while True:
-        i_article_text = driver.find_element(By.CLASS_NAME, 'articleBody').text
+        i_article_text = soup.find(class_='articleBody').text
         article_text = article_text + '\n' + i_article_text
 
-        pager_elements = driver.find_elements(By.CLASS_NAME, 'next')
+        pager_elements = soup.find_all(class_='next')
         if pager_elements:
-            next_li_element = pager_elements[0].find_elements(By.CLASS_NAME, 'next')
+            next_li_element = pager_elements[0].find_all(class_='next')
             if next_li_element:
-                next_url = next_li_element.find_element(By.TAG_NAME, 'a').click()
+                next_url = next_li_element.find('a').get('href')
+                response = session.get(next_url, headers=headers)
                 time.sleep(SLEEP_TIME)
+                soup = BeautifulSoup(response.text, 'html.parser')
             else:
                 break
         else:
@@ -97,7 +101,7 @@ def get_data(driver: WebDriver, key: str) -> dict:
     return result
 
 
-def get_news_url(driver: WebDriver) -> list:
+def get_news_url(response: Response) -> list:
     """
     一覧ページからURLを取得する
 
@@ -107,8 +111,10 @@ def get_news_url(driver: WebDriver) -> list:
     Returns:
         list: 詳細ページのURL
     """
-    a_elements = driver.find_elements(By.CLASS_NAME, 'rewrite_ab')
-    return [i.get_attribute('href') for i in a_elements]
+    soup = BeautifulSoup(response.text, 'html.parser')
+
+    a_elements = soup.find_all(class_='rewrite_ab')
+    return [i.get('href') for i in a_elements]
 
 
 def extract_key(url: str) -> str:

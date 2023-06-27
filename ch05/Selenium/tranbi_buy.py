@@ -2,7 +2,6 @@
 M&A案件一覧を取得する(事業を買う)
 """
 import time
-import datetime
 import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.common.by import By

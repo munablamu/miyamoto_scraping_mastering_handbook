@@ -28,7 +28,6 @@ def main():
             time.sleep(SLEEP_TIME)
             urls.extend(get_urls(driver))
 
-        results = list()
         for i_url in urls:
             key = extract_key(i_url)
 

@@ -7,7 +7,8 @@
 # useful for handling different item types with a single interface
 from itemadapter import ItemAdapter
 from jsonschema import validate
-from pymongo import MongoClient
+
+from syuwa.utils import MongoMixin
 
 
 class ValidationPipeline:
@@ -43,7 +44,7 @@ class ValidationPipeline:
         return item
 
 
-class MongoPipeline:
+class MongoPipeline(MongoMixin):
     """
     ItemをMongoDBに保存するPipeline。
     """
@@ -54,10 +55,11 @@ class MongoPipeline:
         Args:
             spider (_type_): _description_
         """
-        self.client = MongoClient('localhost', 27017)
-        self.db = self.client['scraping']
-        self.collection = self.db['syuwa']
-
+        self.setup_mongo(
+            'mongodb://localhost:27017',
+            'scraping',
+            'syuwa'
+        )
 
     def close_spider(self, spider):
         """
@@ -66,7 +68,7 @@ class MongoPipeline:
         Args:
             spider (_type_): _description_
         """
-        self.client.close()
+        self.close_mongo()
 
 
     def process_item(self, item, spider):

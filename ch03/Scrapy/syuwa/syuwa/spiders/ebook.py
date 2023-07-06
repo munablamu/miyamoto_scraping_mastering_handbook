@@ -1,7 +1,6 @@
 import re
 
 import scrapy
-from pymongo import MongoClient
 
 from syuwa.items import EBook
 from syuwa.utils import MongoMixin
@@ -13,13 +12,16 @@ class EbookSpider(scrapy.Spider, MongoMixin):
     start_urls = ["https://www.shuwasystem.co.jp/search/index.php?search_genre=13273"]
 
 
-    def __init__(self, name=None, **kwargs):
-        super().__init__(name, **kwargs)
-        self.setup_mongo(
-            'mongodb://localhost:27017',
-            'scraping',
-            'syuwa'
+    @classmethod
+    def from_crawler(cls, crawler, *args, **kwargs):
+        spider = super().from_crawler(crawler, *args, **kwargs)
+        spider.setup_mongo(
+            mongodb_uri=crawler.settings.get('MONGODB_URI'),
+            mongodb_database=crawler.settings.get('MONGODB_DATABASE'),
+            mongodb_collection=cls.name
         )
+        return spider
+
 
     def parse(self, response):
         bookwrap_element = response.css('.bookWrap')
@@ -27,14 +29,14 @@ class EbookSpider(scrapy.Spider, MongoMixin):
             url = ttl_element.css('a::attr("href")').get()
 
             key = self._extract_key(url)
-            flag = self.collection.find_one({'key': key})
-            if not flag:
+            if not self.collection.find_one({'key': key}):
                 yield response.follow(url, self.parse_article)
+            else:
+                self.logger.info(f'URL {url} already processed, skipping')
 
         next_url = self._get_next_page_url(response)
         if next_url:
             yield response.follow(next_url, callback=self.parse)
-
 
 
     def parse_article(self, response):

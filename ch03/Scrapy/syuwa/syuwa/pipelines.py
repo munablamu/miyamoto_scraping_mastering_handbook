@@ -48,6 +48,19 @@ class MongoPipeline(MongoMixin):
     """
     ItemをMongoDBに保存するPipeline。
     """
+    @classmethod
+    def from_crawler(cls, crawler):
+        return cls(
+            mongodb_uri=crawler.settings.get('MONGODB_URI'),
+            mongodb_database=crawler.settings.get('MONGODB_DATABASE'),
+        )
+
+
+    def __init__(self, mongodb_uri, mongodb_database):
+        self.mongo_uri = mongodb_uri
+        self.mongo_db = mongodb_database
+
+
     def open_spider(self, spider):
         """
         Spiderの開始時にMongoDBに接続する。
@@ -55,11 +68,9 @@ class MongoPipeline(MongoMixin):
         Args:
             spider (_type_): _description_
         """
-        self.setup_mongo(
-            'mongodb://localhost:27017',
-            'scraping',
-            'syuwa'
-        )
+        mongodb_collection = spider.name
+        self.setup_mongo(self.mongo_uri, self.mongo_db, mongodb_collection)
+
 
     def close_spider(self, spider):
         """

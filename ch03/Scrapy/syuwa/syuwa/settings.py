@@ -70,9 +70,9 @@ ITEM_PIPELINES = {
  #    "scrapy_mongodb.MongoDBPipeline": 800,
 }
 
-# MONGODB_URI = 'mongodb://localhost:27017'
-# MONGODB_DATABASE = 'scraping'
-# MONGODB_COLLECTION = 'syuwa'
+MONGODB_URI = 'mongodb://localhost:27017'
+MONGODB_DATABASE = 'scraping'
+#MONGODB_COLLECTION = 'syuwa'
 # MONGODB_UNIQUE_KEY = 'key'
 
 # Enable and configure the AutoThrottle extension (disabled by default)
